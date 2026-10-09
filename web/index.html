@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>AI 合约量化看板 v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#070a0f;--bg2:#0b0f16;
+  --panel:#0e131c;--panel2:#0a0e15;
+  --border:#1b2433;--border2:#27344a;
+  --tx:#e6edf6;--dim:#7c8aa0;--dim2:#56627a;
+  --red:#ff5566;--green:#16d39a;--amber:#ffb020;--blue:#4d9fff;
+  --line:#161e2a;
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  --mono:"IBM Plex Mono","SF Mono",Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--tx);font:13px/1.55 var(--sans);padding:14px;
+     -webkit-font-smoothing:antialiased;position:relative;min-height:100vh}
+/* 背景氛围：径向辉光 + 极淡网格，营造交易终端纵深感（非纯色） */
+body::before{content:'';position:fixed;inset:0;z-index:-2;
+  background:
+    radial-gradient(900px 520px at 86% -12%, rgba(77,159,255,.12), transparent 60%),
+    radial-gradient(720px 520px at -6% 102%, rgba(22,211,154,.08), transparent 55%),
+    radial-gradient(640px 420px at 102% 100%, rgba(255,176,32,.05), transparent 55%),
+    var(--bg);
+}
+body::after{content:'';position:fixed;inset:0;z-index:-1;opacity:.5;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.020) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.020) 1px, transparent 1px);
+  background-size:44px 44px;
+  -webkit-mask-image:radial-gradient(circle at 50% 24%, #000, transparent 92%);
+          mask-image:radial-gradient(circle at 50% 24%, #000, transparent 92%);
+}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+a{color:var(--blue);text-decoration:none}
+
+/* ---- 顶栏（sticky 毛玻璃） ---- */
+.top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+     margin:-14px -14px 14px;padding:12px 16px 12px;
+     background:linear-gradient(180deg, rgba(10,14,21,.92), rgba(10,14,21,.72));
+     backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+     border-bottom:1px solid var(--border);
+     box-shadow:0 10px 30px -20px #000}
+.top h1{font-size:16px;font-weight:600;letter-spacing:.01em;display:flex;align-items:baseline;gap:8px}
+.top h1 .v{font-family:var(--mono);font-size:10px;font-weight:500;color:var(--dim);
+           border:1px solid var(--border);border-radius:5px;padding:1px 6px;letter-spacing:.06em}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--green);display:inline-block;margin-right:5px;
+     box-shadow:0 0 8px var(--green);animation:breathe 2.1s ease-in-out infinite}
+.dot.off{background:var(--red);box-shadow:0 0 8px var(--red);animation:none}
+.dot.pause{background:var(--amber);box-shadow:0 0 8px var(--amber);animation:breathe 2.1s ease-in-out infinite}
+.badge{font-size:11px;padding:2px 9px;border-radius:6px;border:1px solid var(--border);color:var(--dim);
+       font-family:var(--mono);letter-spacing:.03em}
+.badge.dry{color:var(--amber);border-color:#4a3a10;background:rgba(255,176,32,.07)}
+.badge.live{color:var(--red);border-color:#4a1414;background:rgba(255,85,102,.07)}
+.spacer{flex:1}
+.clock{color:var(--dim);font-size:12px;font-family:var(--mono)}
+.btn{background:var(--panel);border:1px solid var(--border);color:var(--tx);padding:6px 15px;
+     border-radius:8px;cursor:pointer;font-size:12px;font-family:var(--sans);
+     transition:border-color .15s, background .15s, transform .1s}
+.btn:hover{border-color:var(--blue);background:#11192a}
+.btn:active{transform:translateY(1px)}
+
+/* ---- 卡片 ---- */
+.grid{display:grid;gap:12px;margin-bottom:12px}
+.g4{grid-template-columns:repeat(4,1fr)}
+.g2{grid-template-columns:1fr 1fr}
+.g3{grid-template-columns:repeat(3,1fr)}
+.card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--border);
+      border-radius:14px;padding:14px 16px;min-width:0;position:relative;overflow:hidden;
+      box-shadow:0 1px 0 rgba(255,255,255,.025) inset, 0 10px 26px -18px #000;
+      transition:transform .18s ease, border-color .18s ease, box-shadow .18s ease}
+.card:hover{border-color:var(--border2);transform:translateY(-2px);
+            box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 16px 34px -20px #000}
+.card h2{font-size:10.5px;color:var(--dim);font-weight:600;margin-bottom:7px;
+         letter-spacing:.09em;text-transform:uppercase}
+.big{font-size:23px;font-weight:700;letter-spacing:-.01em;font-family:var(--mono);
+     border-radius:8px;transition:background .2s}
+.up{color:var(--red)!important}.dn{color:var(--green)!important}.amb{color:var(--amber)}
+.sub{color:var(--dim);font-size:11px;margin-top:3px;font-family:var(--mono)}
+.spark{margin-top:7px;display:block;filter:drop-shadow(0 0 4px rgba(22,211,154,.25))}
+/* 顶部指标卡：左侧细彩条区分维度 */
+.grid.g4 .card::before{content:'';position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:3px;
+                       background:var(--blue);opacity:.85}
+.grid.g4 .card:nth-child(2)::before{background:var(--amber)}
+.grid.g4 .card:nth-child(3)::before{background:var(--green)}
+.grid.g4 .card:nth-child(4)::before{background:#9b8cff}
+.grid.g4 .card{padding-left:18px}
+
+/* ---- 品牌格 ---- */
+.sec{font-size:11px;color:var(--dim);margin:4px 0 9px;font-family:var(--mono);letter-spacing:.02em}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,1fr));gap:11px;margin-bottom:12px}
+.tk{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--border);
+    border-radius:12px;padding:11px 13px;min-width:0;position:relative;overflow:hidden;
+    transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+.tk:hover{transform:translateY(-2px);border-color:var(--border2);box-shadow:0 14px 30px -20px #000}
+.tk .nm{font-size:12px;color:var(--dim)}
+.tk .nm b{color:var(--tx);font-size:13px;margin-right:6px;font-weight:600}
+.tk .px{font-size:17px;font-weight:700;margin:3px 0;font-family:var(--mono)}
+.tk .chg{font-size:11px;margin-left:6px;font-weight:500;font-family:var(--mono)}
+.tk .note{font-size:10.5px;color:var(--dim);margin-top:5px;line-height:1.5;
+          display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.cand{display:inline-block;font-size:10px;color:#1a1205;background:var(--amber);border-radius:4px;
+      padding:1px 6px;margin-top:5px;font-weight:700;box-shadow:0 0 10px rgba(255,176,32,.3)}
+
+/* ---- 表格 ---- */
+.tblw{overflow-x:auto;border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--dim);font-weight:600;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;
+   position:sticky;top:0;background:var(--panel2);z-index:1}
+tbody tr{transition:background .12s}
+tbody tr:hover{background:rgba(255,255,255,.03)}
+tr:last-child td{border-bottom:none}
+.tag{display:inline-block;padding:1px 7px;border-radius:5px;font-size:10px;font-weight:500}
+.t-trend{background:#13314a;color:#6cb6ff}.t-hf{background:#3a2e14;color:var(--amber)}
+.t-watch{background:#0f2e22;color:#39d98a}
+/* ---- 归属标签（10-07）：AI 监管（原三层保护档位已下线）---- */
+.t-ai{background:#0f2e22;color:#39d98a}
+
+/* ---- 日志 ---- */
+.log{background:#070b11;border:1px solid var(--border);border-radius:12px;padding:11px;
+     font:10.5px/1.65 var(--mono);overflow-y:auto;white-space:pre-wrap;
+     color:#8fa0b3;height:280px;word-break:break-all;
+     box-shadow:inset 0 0 30px rgba(0,0,0,.5)}
+.log::-webkit-scrollbar{width:7px}
+.log::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+.empty{color:var(--dim);text-align:center;padding:22px 0;font-family:var(--sans)}
+/* 标签统计：n<5 压暗 + 左侧细标 */
+tr.thin td{color:var(--dim2);font-weight:400}
+tr.thin td:first-child{box-shadow:inset 2px 0 0 var(--amber)}
+/* 模型教训 */
+.lsn{display:block;padding:8px 0;border-bottom:1px solid var(--line)}
+.lsn:last-child{border-bottom:none}
+.lsn .hd{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:11px}
+.lsn .combo{color:var(--tx);font-weight:600;font-size:12px}
+.lsn .m{color:var(--dim);font-family:var(--mono);font-variant-numeric:tabular-nums}
+.lsn .body{color:#9fb0c4;margin-top:4px;line-height:1.55}
+.lsn.thin{opacity:.6}
+.lsn.thin .combo{font-weight:400}
+
+/* ---- 分页条 ---- */
+.pager{display:flex;align-items:center;gap:8px;justify-content:flex-end;margin-top:7px;
+       font-size:11px;color:var(--dim);font-family:var(--mono)}
+.pager .btn{padding:3px 12px;font-size:11px;color:var(--dim);border-radius:7px}
+.pager .btn:hover:not(:disabled){color:var(--tx);border-color:var(--blue)}
+.pager .btn:disabled{opacity:.35;cursor:default}
+.pager .btn:disabled:hover{border-color:var(--border)}
+
+/* ---- 订单生命详情（全屏覆盖层：历史行点击进入；CSS class 切视图，无路由） ---- */
+#lifeView{position:fixed;inset:0;z-index:60;display:none;overflow-y:auto;overscroll-behavior:contain;
+          background:var(--bg);padding:14px;-webkit-overflow-scrolling:touch}
+body.life-open #lifeView{display:block}
+body.life-open{overflow:hidden}
+.lifeTop{position:sticky;top:-14px;z-index:5;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+         margin:-14px -14px 12px;padding:12px 16px;
+         background:linear-gradient(180deg,rgba(10,14,21,.96),rgba(10,14,21,.80));
+         backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+         border-bottom:1px solid var(--border);box-shadow:0 10px 30px -20px #000}
+.lifeTop h1{font-size:15px;font-weight:600;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.lifeTop h1 .d{font-family:var(--mono);font-size:11px;color:var(--dim);font-weight:400}
+.lifeWrap{max-width:1080px;margin:0 auto}
+/* 键值表：**不用「gap 露底色当分割线」**——最后一行填不满时，剩余格子会露出
+   一片底色，看着像渲染坏了（实测开仓凭证 9 项在 7 列下留 5 个空格）。
+   改成 cell 自带 border-right/bottom，容器 overflow:hidden 吃掉出界的那条。 */
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));
+    background:var(--panel2);border:1px solid var(--border);border-radius:10px;
+    overflow:hidden;margin-top:4px}
+.kv > div{background:var(--panel2);padding:8px 11px;min-width:0;
+          border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
+.kv .k{font-size:10px;color:var(--dim);letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px}
+.kv .vv{font-size:13px;font-family:var(--mono);word-break:break-all;line-height:1.35}
+.kv .vv.s{font-family:var(--sans);font-size:12.5px}
+.resbar{display:flex;flex-wrap:wrap;gap:9px;margin-top:10px}
+.resbar .rb{flex:1 1 128px;background:linear-gradient(180deg,var(--panel),var(--panel2));
+            border:1px solid var(--border);border-radius:11px;padding:9px 12px;min-width:0}
+.resbar .rb .k{font-size:10px;color:var(--dim);letter-spacing:.05em;text-transform:uppercase}
+.resbar .rb .vv{font-size:17px;font-weight:700;font-family:var(--mono);margin-top:2px;
+                white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+tr.rowlink{cursor:pointer}
+tr.rowlink:hover{background:rgba(77,159,255,.09)}
+tr.rowlink td:last-child::after{content:' ›';color:var(--blue);font-weight:700}
+/* 浮盈采样：时间轴 + 逐档小卡 */
+.mk{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;margin-top:9px}
+.mk .m{background:var(--panel2);border:1px solid var(--border);border-radius:9px;padding:7px 9px;min-width:0}
+.mk .m .k{font-size:10px;color:var(--dim);font-family:var(--mono)}
+.mk .m .vv{font-size:13.5px;font-weight:600;font-family:var(--mono);margin-top:1px}
+.mk .m .d{font-size:10px;color:var(--dim2);font-family:var(--mono);margin-top:1px}
+.mk .m.miss{opacity:.42}
+.lifePath{position:relative;margin-top:8px;background:var(--panel2);border:1px solid var(--border);
+          border-radius:10px;padding:10px 12px 24px}
+.lifePath svg{display:block;width:100%;height:126px}
+/* 🔴 详情里的卡**不播入场动画**。实测：renderLife() 每次刷新重写 #lifeBody，
+   新插入的元素会重播 `.card > *{animation:fadeUp .5s}` → 首卡子元素 opacity
+   每 2997ms 走一遍 1→0→0.08→0.72→0.95→1，整屏每分钟闪 20 次（用户反馈
+   「前端不要老刷新，体验不好」就是这个）。入场动画只该出现在首屏静态卡上。 */
+#lifeBody .card > *{animation:none}
+.lifeAxis{position:absolute;left:12px;right:12px;bottom:5px;height:14px}
+.lifeAxis span{position:absolute;transform:translateX(-50%);font:10px var(--mono);
+               color:var(--dim2);white-space:nowrap}
+.lifeAxis span:last-child{transform:translateX(-100%)}
+
+/* ---- 翻仓事务面板 ---- */
+.flp{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
+.fchip{font-size:11px;padding:3px 9px;border-radius:6px;border:1px solid var(--border);
+       color:var(--dim);display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);
+       transition:transform .12s, box-shadow .12s}
+.fchip:hover{transform:translateY(-1px)}
+.fchip b{font-weight:600}
+.fchip.S1{color:var(--tx);border-color:#2a3a4f}
+.fchip.S2{color:var(--red);border-color:#4a1414;background:#1a0f10;box-shadow:0 0 12px -4px var(--red)}
+.fchip.S3{color:var(--amber);border-color:#4a3a10;background:#1a1608}
+.fchip.S4{color:var(--amber);border-color:#4a3a10;background:#1a1608}
+.fchip.S5{color:#fff;border-color:#7a1f1f;background:#3a0d0d;font-weight:700;
+          box-shadow:0 0 14px -3px var(--red);animation:breathe 1.4s ease-in-out infinite}
+.fchip.S0{opacity:.55}
+.fbar{height:3px;border-radius:2px;background:var(--amber);margin-top:4px}
+.faudit{font-size:11px;color:var(--dim);margin-top:8px;line-height:1.6}
+.faudit .arow{padding:4px 0;border-bottom:1px solid var(--line);display:flex;
+              gap:8px;flex-wrap:wrap;align-items:baseline}
+.faudit .arow:last-child{border-bottom:none}
+.faudit .atm{font-family:var(--mono);color:#8fa0b3}
+.faudit .awhy{color:var(--amber)}
+
+/* ---- 入场动画（仅静态卡片，动态内容不重播） ---- */
+.grid.g4 .card{animation:fadeUp .5s ease both}
+.grid.g4 .card:nth-child(1){animation-delay:.02s}
+.grid.g4 .card:nth-child(2){animation-delay:.08s}
+.grid.g4 .card:nth-child(3){animation-delay:.14s}
+.grid.g4 .card:nth-child(4){animation-delay:.20s}
+.card > *{animation:fadeUp .5s ease both}
+.card > *{animation-delay:.12s}
+
+@keyframes breathe{0%,100%{opacity:1;box-shadow:0 0 8px currentColor}50%{opacity:.5;box-shadow:0 0 2px currentColor}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes flash{0%{background:rgba(77,159,255,.18)}100%{background:transparent}}
+.big.flash{animation:flash .7s ease}
+
+@media (max-width:860px){
+  body{padding:10px}
+  .top{margin:-10px -10px 12px;padding:10px 12px}
+  .g4{grid-template-columns:repeat(2,1fr)}
+  .g2{grid-template-columns:1fr}
+  .g3{grid-template-columns:1fr}
+  .big{font-size:20px}
+  .log{height:200px}
+  .tgrid{grid-template-columns:repeat(2,1fr)}
+  /* 订单生命（手机端）：覆盖层内边距/顶栏跟着收窄，键值改两列 */
+  #lifeView{padding:10px}
+  .lifeTop{top:-10px;margin:-10px -10px 10px;padding:10px 12px}
+  .lifeTop h1{font-size:14px}
+  .lifeTop h1 .d{font-size:10.5px}
+  .kv{grid-template-columns:repeat(2,1fr)}
+  .kv .vv{font-size:12px}
+  .resbar .rb{flex:1 1 calc(50% - 5px);padding:8px 10px}
+  .resbar .rb .vv{font-size:15px}
+  .mk{grid-template-columns:repeat(3,1fr);gap:6px}
+  .mk .m{padding:6px 7px}
+  .mk .m .vv{font-size:12.5px}
+  .lifePath{padding:8px 8px 22px}
+  .lifePath svg{height:108px}
+  .lifeAxis{left:8px;right:8px}
+  .lifeAxis span{font-size:9px}
+}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1>AI 合约量化看板 <span class="v">v2</span></h1>
+  <span><span class="dot" id="dot"></span><span id="stTxt" style="font-size:12px">运行中</span></span>
+  <span class="badge dry" id="modeBadge">干跑</span>
+  <span class="badge" id="modelBadge">模型 --</span>
+  <span class="spacer"></span>
+  <span class="clock num" id="clock"></span>
+  <button class="btn" id="btnPause" onclick="togglePause()">⏸ 暂停</button>
+</div>
+
+<!-- ============ 指标卡 ============ -->
+<div class="grid g4">
+  <div class="card">
+    <h2>账户权益 / USDT</h2>
+    <div class="big num" id="equity">--</div>
+    <div class="sub" id="eqSub"></div>
+    <svg class="spark" id="eqSpark" width="100%" height="34" preserveAspectRatio="none"></svg>
+  </div>
+  <div class="card">
+    <h2>今日盈亏</h2>
+    <div class="big num" id="pnl">--</div>
+    <div class="sub" id="pnlSub"></div>
+  </div>
+  <div class="card">
+    <h2>今日已成交</h2>
+    <div class="big num" id="cnt">--</div>
+    <div class="sub" id="cntSub"></div>
+  </div>
+  <div class="card">
+    <h2>决策模型</h2>
+    <div style="font-size:14px;font-weight:600;margin-bottom:2px;font-family:var(--mono)" id="mName">--</div>
+    <div class="sub" id="mInfo">--</div>
+    <div class="sub" id="mNext"></div>
+  </div>
+</div>
+
+<!-- ============ 品牌格 ============ -->
+<div class="sec" id="tgridSec">品牌格（加载中…）</div>
+<div class="tgrid" id="tgrid"></div>
+
+<!-- ============ 持仓 + 今日交割 ============ -->
+<div class="grid g2">
+  <div class="card">
+    <h2>当前持仓（<span id="limTxt">加载中…</span>）</h2>
+    <div class="sub" id="posLegend"></div>
+    <div class="tblw"><table id="pos"><thead><tr>
+      <th>品种</th><th>方向</th><th>张数 · 保证金</th><th>入场</th><th>现价</th><th>止损</th><th>止盈</th><th>浮盈 · 收益率</th><th>归属</th>
+    </tr></thead><tbody></tbody></table></div>
+  </div>
+  <div class="card">
+    <h2>今日平仓交割（最新在上）</h2>
+    <div class="sub" id="dealsHint">点任意一行 → 看这一单的完整生命（开仓标签 · 全程盈亏轨迹 · 出场结果）</div>
+    <div class="tblw"><table id="deals"><thead><tr>
+      <th>时间</th><th>品种</th><th>方向</th><th>动作</th><th>盈亏</th><th>理由</th>
+    </tr></thead><tbody></tbody></table></div>
+    <div class="pager" id="dealsPager">
+      <button class="btn" id="dealPrev">‹ 上一页</button>
+      <span id="dealPg">--</span>
+      <button class="btn" id="dealNext">下一页 ›</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 翻仓事务 + 双开审计 ============ -->
+<div class="card" style="margin-top:12px">
+  <h2>单仓状态 · 翻仓事务 · 双开审计（一个品种一个仓位）</h2>
+  <div class="sub" id="flipSub">加载中…</div>
+  <div class="flp" id="flipStates"></div>
+  <div class="faudit" id="flipAudit"></div>
+</div>
+
+<!-- ============ 决策日志 + 引擎日志 ============ -->
+<div class="grid g2" style="margin-top:12px">
+  <div class="card">
+    <h2>模型决策日志</h2>
+    <div class="log" id="declog">加载中…</div>
+  </div>
+  <div class="card">
+    <h2>引擎日志</h2>
+    <div class="log" id="englog">加载中…</div>
+  </div>
+</div>
+
+<!-- ============ 持仓管理（平仓决策）============ -->
+<div class="card" style="margin-top:12px">
+  <h2>持仓管理决策 · 模型自己判 持有 / 平仓</h2>
+  <div class="sub" id="exitSub">加载中…</div>
+  <div class="log" id="exitlog">加载中…</div>
+</div>
+
+<!-- ============ 趋势观察 ============ -->
+<div class="card" style="margin-top:12px">
+  <h2>模型教训 · 按标签聚合（只记亏损单）</h2>
+  <div class="sub" id="lessonSub">只记录亏损单的条件教训；盈利单不进教训（其盈亏统计见「标签战绩」，盈亏单都算）</div>
+  <div class="log" id="lessons" style="height:150px">--</div>
+</div>
+
+<!-- ============ 标签统计（真实战绩） ============ -->
+<div class="card" style="margin-top:12px">
+  <h2>标签战绩（按开仓时状态分组的真实胜率 · 数据来自 trades.json 实际平仓记录）</h2>
+  <div class="sub" id="tagSub">加载中…</div>
+  <div class="grid g4" style="margin-top:8px">
+    <div class="card">
+      <h2>1H 动能方向</h2>
+      <div class="tblw"><table id="tagMom"><thead><tr>
+        <th>动能</th><th>笔数</th><th>胜率</th><th>笔均</th><th>累计</th>
+      </tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <h2>开仓位置</h2>
+      <div class="tblw"><table id="tagPos"><thead><tr>
+        <th>位置</th><th>笔数</th><th>胜率</th><th>笔均</th><th>累计</th>
+      </tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <h2>行情定性</h2>
+      <div class="tblw"><table id="tagReg"><thead><tr>
+        <th>行情</th><th>笔数</th><th>胜率</th><th>笔均</th><th>累计</th>
+      </tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <h2>入场源</h2>
+      <div class="tblw"><table id="tagSrc"><thead><tr>
+        <th>入场源</th><th>笔数</th><th>胜率</th><th>笔均</th><th>累计</th>
+      </tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+  <div class="sub" style="margin-top:12px">
+    <b style="color:var(--tx)">四维交叉组合（仅列 n≥3 的格子）</b>
+    <span style="color:var(--dim)">—— 四维同时相同的真实交叉战绩，是上面四张
+      单维表里最有统计价值的部分（单维会被其它维度的样本混进来）</span>
+  </div>
+  <div class="tblw" style="margin-top:4px"><table id="tagGroupTbl"><thead><tr>
+    <th>四维组合</th><th>笔数</th><th>胜率</th><th>笔均</th><th>累计</th>
+  </tr></thead><tbody></tbody></table></div>
+</div>
+
+<!-- ============ 订单生命详情（从「今日平仓交割」行点进来） ============
+     为什么用**全屏覆盖层 + CSS class 切视图**而不是新页面/路由：
+     ① 看板是单文件、无构建、无路由，加 hash 路由要引 window.onhashchange
+        与一堆状态同步，收益为零；② 云端镜像与本地同一份 HTML，任何路由
+        都要在云端也成立（云端只回 `GET /`，不认路径）→ 覆盖层天然兼容。
+     ⚠ **数据已在 payload 里**（`life` 字段）→ 打开/刷新都是纯内存渲染、
+        零请求，手机端点开不会转圈。 -->
+<div id="lifeView">
+  <div class="lifeTop">
+    <h1 id="lifeTitle">订单生命</h1>
+    <span class="spacer"></span>
+    <button class="btn" id="lifeBack" onclick="closeLife()">‹ 返回历史</button>
+  </div>
+  <div class="lifeWrap" id="lifeBody"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+/* 数值变化时闪一下（只在实际变化时触发，避免每轮刷新都闪） */
+function flash(el){
+  if(!el) return;
+  const cur = el.textContent;
+  if(el._last !== undefined && el._last !== cur){
+    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+  }
+  el._last = cur;
+}
+/* ---- 内容没变就不碰 DOM（10-06 用户反馈「前端不要老刷新，体验不好」）----
+   老做法：每 3s 无条件重写 innerHTML。代价有两条，都在用户那儿看得见：
+     ① 正在拖选/阅读的内容被打断；② 新插入的元素会**重播 CSS 入场动画**
+        （实测详情卡 opacity 每 2997ms 走一遍 1→0→…→1，整屏每分钟闪 20 次）。
+   所以改成「先比指纹，一样就一个字节都不写」。key 用「容器标识」，
+   tbody 这类没有 id 的容器用 putEl() 直接给元素。 */
+const _prevDoc = {};
+function putEl(key, el, html, asText){
+  if(!el || _prevDoc[key] === html) return false;
+  _prevDoc[key] = html;
+  if(asText) el.textContent = html; else el.innerHTML = html;
+  return true;
+}
+function put(id, html, asText){ return putEl(id, $(id), html, asText); }
+/* 窗口尺寸变了：迷你图/折线的 viewBox 是按容器宽度算的 → 必须作废缓存重画 */
+let _rzTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(_rzTimer);
+  _rzTimer = setTimeout(()=>{
+    delete _prevDoc['tgrid']; delete _prevDoc['eqSpark'];
+    _lifeSig = null;
+    _sparkSig = null; _eqSig = null;      /* 折线按旧宽度画的 → 一并作废 */
+    loadState();
+  }, 250);
+});
+/* 今日交割分页状态（5s 自动刷新时保持当前页不变） */
+let dealsAll = [], dealsPage = 0;
+const DEALS_PP = 10;
+/* 订单生命（最近 N 单，payload 的 `life` 字段，服务端后台聚合，见 server.py）
+   lifeItems 只做**查找**；详情视图渲染走 renderLife()。
+   livePos = 当前持仓（详情若指着一张还没平的单，用它显示实时浮盈）。 */
+let lifeItems = [], lifeTid = null, livePos = [];
+/* 上一次的「已实现盈亏」——用来判断要不要闪 #pnl（见 loadState 内注释） */
+let _lastReal = null;
+/* 品牌格 spark 折线的数据指纹：折线是 JS 画的，html 里看不出来，得单独管 */
+let _sparkSig = null;
+/* 权益折线的数据指纹（同因） */
+let _eqSig = null;
+function renderDeals(){
+  const maxPg = Math.max(0, Math.ceil(dealsAll.length/DEALS_PP)-1);
+  const off = dealsPage*DEALS_PP;
+  const rows = dealsAll.slice(off, off+DEALS_PP);
+  putEl('deals:body', $('deals').querySelector('tbody'), rows.map((t,k)=>{
+    const pnl=+t.pnl||0;
+    const eng=(t.reason||'').includes('引擎执行');
+    const act = eng ? (pnl>=0?'引擎止盈':'引擎平仓') : (pnl>=0?'止盈离场':'止损离场');
+    const has = !!findLife(t);   /* 有完整生命才给「可点」样式，没有就不骗人 */
+    return `<tr class="${has?'rowlink':''}" data-i="${off+k}"${has?' title="点击查看这一单的完整生命"':''}>
+    <td class="num">${fmtT(t.t)}</td><td>${(t.sym||'').replace('_USDT','')}</td>
+    <td class="${t.side==='long'?'up':'dn'}">${t.side==='long'?'多':'空'}</td>
+    <td><span class="tag ${pnl>=0?'t-trend':'t-hf'}">${act}</span></td>
+    <td class="${cls(pnl)} num">${sgn(pnl)+' U'}</td>
+    <td style="color:var(--dim);max-width:180px;overflow:hidden;text-overflow:ellipsis">${(t.reason||'').slice(0,36)}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" class="empty">今日暂无平仓</td></tr>');
+  put('dealPg', dealsAll.length ? `第 ${dealsPage+1}/${maxPg+1} 页 · 共 ${dealsAll.length} 笔` : '共 0 笔', true);
+  $('dealPrev').disabled = dealsPage<=0;
+  $('dealNext').disabled = dealsPage>=maxPg;
+}
+const fmtU = v => v==null?'--':Number(v).toFixed(2);
+const fmtP = (v,sym) => {
+  if(v==null) return '--';
+  v = Number(v);
+  const d = v>=1000?2:(v>=1?3:6);
+  return v.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:d});
+};
+const fmtT = t => new Date(t*1000).toLocaleTimeString('zh-CN',{hour12:false,hour:'2-digit',minute:'2-digit'});
+const cls = v => v>0?'up':(v<0?'dn':'');
+const sgn = v => (v>0?'+':'')+Number(v).toFixed(2);
+let paused = null, lastHf = 0;
+
+/* ---- sparkline：SVG 折线 ---- */
+function spark(el, pts, up){
+  const W = el.clientWidth||200, H = 34;
+  el.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  if(!pts || pts.length<2){ el.innerHTML=''; return; }
+  const vs = pts.map(p=>p[1]);
+  let mn=Math.min(...vs), mx=Math.max(...vs);
+  if(mx-mn < mx*1e-6){ mx+=mx*1e-4||1e-6; mn-=mn*1e-4||1e-6; }
+  const X=i=>i/(pts.length-1)*(W-2)+1, Y=v=>H-3-(v-mn)/(mx-mn)*(H-6);
+  const d = pts.map((p,i)=>`${i?'L':'M'}${X(i).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
+  const c = up===false?'var(--green)':'var(--green)';
+  el.innerHTML = `<path d="${d}" fill="none" stroke="${c}" stroke-width="1.4"/>
+    <circle cx="${X(pts.length-1)}" cy="${Y(vs[vs.length-1])}" r="2" fill="${c}"/>`;
+}
+
+/* ---- 品种标注文案 ---- */
+function note(m){
+  const a=[];
+  const wu=m.walk_up_bars||0, wd=m.walk_dn_bars||0;
+  if(wu>=3){
+    if(m.walk_up_touch) a.push(`多头滑行${wu}根+触上轨=回归空候选区`);
+    else a.push(`沿上轨滑行${wu}根=多头趋势顺势多`);
+  }else if(wd>=3){
+    if(m.walk_dn_touch) a.push(`空头滑行${wd}根+触下轨=回归多候选区`);
+    else a.push(`沿下轨滑行${wd}根=空头趋势顺势空`);
+  }
+  if(m.close_out_up_bars>=2) a.push(`收盘轨上${m.close_out_up_bars}根=强趋势别反着做`);
+  if(m.close_out_dn_bars>=2) a.push(`收盘轨下${m.close_out_dn_bars}根=强趋势别反着做`);
+  if((m.bw_pct??1)<=0.15) a.push(`带宽分位${Math.round(m.bw_pct*100)}% 缩口蓄势`);
+  if((m.bw_burst||0)>=1.35) a.push('带宽张口=变盘启动');
+  if(m.bb_in_kc) a.push('BB⊂KC 超级缩口=等方向');
+  if((m.three_push_up||0)>=3) a.push('上轨三推力=衰竭预警');
+  if((m.three_push_dn||0)>=3) a.push('下轨三推力=衰竭预警');
+  if(!a.length){
+    const px=m.px||0;
+    if(px>m.up) a.push('价格在上轨上方');
+    else if(px<m.dn) a.push('价格在下轨下方');
+    else if(px>m.mid) a.push('中轨上方运行');
+    else a.push('中轨下方运行');
+  }
+  if(m.bw_pct!=null && m.bw_pct<0.3) a.push(`带宽 ${m.bw_pct}%`);
+  return a.join(' · ');
+}
+
+/* ---- 归属标签（10-07 改版）----
+   原「三层保护档位」（无保护 · 仅保本兜底 · 绳子武装）**已下线**。
+   原因：那三档的阈值取自 config 的 guards 段（保本兜底/动态绳/分批止盈），
+   而这三条出栏现在**全是关的** —— 照旧渲染会在看板上把每个仓都标成
+   「无保护」，而事实是每个仓都挂着交易所的固定止损/止盈条件单。
+   现在出场由「持仓管理」线程负责（AI 每轮只看持仓的品种判 拿/平），
+   归属统一标 AI 监管。真实止损/止盈口径见持仓卡上方的图例（后端下发）。*/
+function aiTag(){
+  return ` <span class="tag t-ai" title="持仓管理线程每轮只拿当前持仓的品种问一次模型：它说平就市价平、说拿就继续拿；交易所的固定止损/止盈条件单始终挂着兜底">AI 监管</span>`;
+}
+
+/* ================= 订单生命（历史行 → 点进去看这一单的一生） =================
+   数据来自 payload 的 `life` 字段（server.py::_build_life 后台聚合，最近 30 单）：
+     open  事件 → 开仓价/止损止盈/三张订单号/全套标签/市场快照
+     mark  事件 → 开仓后分段递增的浮盈采样（10-06 建 / 10-07 加密；见
+                   engine.py::_TLM_TIERS：前 10 分钟每 15s，之后逐段翻倍，≤240 点）
+     close 事件 → 出场价/盈亏/MFE/MAE/峰值到达时刻/平仓原因
+   ⚠ **配对口径**：服务端 `tid = "sym|side|int(t_at_open*1000)"`。历史行
+     （trades.json 的 close 记录）自带 `t_at_open` → 前端算出同一个 tid 精确配。
+     **不能拿 life.t_open 去配**：它是 journal open 事件里的 `open_ts`，是另一
+     次 time.time()，与 t_at_open 差几毫秒（decision._execute 的注释记过这个
+     坑：20:06:57.079 vs .073）→ 直接比会永远配不上。 */
+
+/* close_cause → 中文（枚举真源 core/flip.py::CAUSE_*，此处只做显示映射） */
+const CAUSE_CN = {sl_tp:'止损/止盈单成交', guard_take:'引擎落袋', flip_out:'翻仓平旧腿',
+                  flip_rollback:'翻仓回滚', time_stop:'时间止损', manual:'模型主动平仓',
+                  risk_guard:'强平爆仓'};
+const SRC_CN  = {deep:'深砸穿轨收回', seq:'连续假突破', wm:'双底/双顶', touch:'仅碰轨'};
+const REG_CN  = {range:'区间', high_vol:'宽幅', up_trend:'上行趋势', down_trend:'下行趋势',
+                 low_vol:'低波动', squeeze:'缩口', wide:'宽幅', trend_up:'上行趋势',
+                 trend_dn:'下行趋势', breakout_up:'向上突破', breakout_dn:'向下突破'};
+/* band_pos → 白话（阈值与 decision.py::_band_tag 同口径） */
+function bandCN(v){
+  if(v==null) return null;
+  const f=+v; if(!isFinite(f)) return null;
+  if(f<0.2) return `贴下轨 ${f.toFixed(2)}`;
+  if(f>0.8) return `贴上轨 ${f.toFixed(2)}`;
+  if(f<0.5) return `中轨下方 ${f.toFixed(2)}`;
+  if(f>0.5) return `中轨上方 ${f.toFixed(2)}`;
+  return `正中轨 ${f.toFixed(2)}`;
+}
+const nz = v => (v==null||v==='') ? '--' : v;
+const pctS = (v,d=3) => v==null ? '--' : (Number(v)>0?'+':'')+Number(v).toFixed(d)+'%';
+function holdCN(m){
+  if(m==null) return '--';
+  const v=+m; if(!isFinite(v)) return '--';
+  return v>=60 ? `${Math.floor(v/60)}h${Math.round(v%60)}m` : `${v.toFixed(1)}m`;
+}
+const fmtDT = t => { if(!t) return '--';
+  const d=new Date(t*1000), p=n=>String(n).padStart(2,'0');
+  return `${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+};
+
+/* 历史行 ↔ 订单生命 查找。**四级，精确优先**（顺序刻意如此，别调换）：
+   ① `trade_id` 直配 —— 10-06 起 engine 的 close 落账才带这个字段（与 life 的
+      tid 同源，开仓时定下、此后从不改写）→ 最可靠，新单走这条。
+   ③ 用**平仓时刻精确相等**配对。`life.t_close` 取自 journal close 的 `close_ts`，
+      本行的 `t` 取自 trades close 记录的 `t`，engine 里两者同源（都是交易所
+      返回的 `row["time"]`）→ 值必然相同。这条专门救②失真、又还没有①的老单。
+   ② 用 `t_at_open` 反推 tid —— 老记录只有这条路。
+      🔴 但它**会失真**：guard 侧「meta 入场价对账」（engine.py 的
+         `meta_entry_mismatch` 分支）判定属"上一代仓"时会把 meta 的
+         `t_at_open` 刷成**对账那一刻**的时间 → 反推出的 tid 与 life 里那个由
+         **首次开仓时间**构成的 tid 对不上（实测 TSLA 差 19.6min、SNDK 差
+         20.7min）→ 下面 ④ 的 3s 容差也够不着 → 那一行点不动。
+   ④ 同品种同方向、开仓时刻相差 ≤3s 的唯一那笔（最弱，仅兜 int(×1000) 的
+      浮点边界差 1ms）。同 sym|side 两次开仓最少隔 flip.min_interval_s=120s
+      → 3s 绝不会错配。 */
+function findLife(t){
+  if(!t || !lifeItems.length) return null;
+  /* ① trade_id 直配 */
+  if(t.trade_id){ for(const it of lifeItems) if(it.tid===t.trade_id) return it; }
+  /* ③ 平仓时刻配对（容差 1s：同 sym|side 不可能 1s 内平两笔） */
+  const tc = Number(t.t);
+  if(tc>0){
+    for(const it of lifeItems)
+      if(it.sym===t.sym && it.side===t.side && it.t_close!=null
+         && Math.abs(+it.t_close - tc) < 1.0) return it;
+  }
+  /* ② / ④ 需要 t_at_open */
+  const w = Number(t.t_at_open);
+  if(!(w>0)) return null;
+  const tid = `${t.sym}|${t.side}|${Math.floor(w*1000)}`;
+  for(const it of lifeItems) if(it.tid===tid) return it;
+  let best=null, bd=3.0;
+  for(const it of lifeItems){
+    if(it.sym!==t.sym || it.side!==t.side) continue;
+    const d = Math.abs((+it.t_open||0) - w);
+    if(d<bd){ bd=d; best=it; }
+  }
+  return best;
+}
+
+const kv = (k,v,cl) => `<div><div class="k">${k}</div><div class="vv ${cl||''}">${v}</div></div>`;
+
+/* 持仓盈亏轨迹：横轴 = **真实等时**（开仓后秒数），纵轴 = **真实盈亏 U**。
+   🔴 10-07 改版。原版三个毛病（截图实证 LINK_USDT：持仓 64.4min、曲线末点
+      +0.22U、实际成交 -1.24U）：
+     ① 横轴是 6 个**等距**档位（15/30/60/120/300/900s），最长只到 15 分钟
+        → 曲线只覆盖持仓的前 23%，**完全看不到后面怎么亏的**；
+     ② 只有 6 个点，谈不上「波动过程」，只是个折线示意；
+     ③ 终点停在最后一次**浮盈采样**，与真实成交盈亏之间**断了一截** ——
+        这正是「曲线看着漂亮、实际亏钱」的根源。
+   现在：采样由后端分段加密（`engine.py::_TLM_TIERS`，前 10 分钟每 15s、
+   之后逐段翻倍，≤240 点，覆盖到 24h），横轴按真实秒数等时排布，并把
+   **真实成交盈亏 pnl**（持仓中则接当前浮盈）作为曲线终点接上去。
+   ⚠ 刻度文字**不放 SVG 里**：SVG 用 preserveAspectRatio="none" 拉满宽度时文字
+     会被横向压扁 → 刻度改用绝对定位的 HTML 层（同一套公式算 left%），
+     字号由 CSS 控制，手机端不会缩成蚂蚁。 */
+const LIFE_PAD = 14;   /* 左右留空：首尾圆点落在视框边缘会被裁掉一半 */
+const NICE_S = [1,2,5,10,15,30,60,120,300,600,900,1800,3600,7200,21600,43200,86400];
+const lifeX = (sec,span) => LIFE_PAD
+  + (span>0 ? Math.max(0,Math.min(1,sec/span)) : 0) * (1000 - 2*LIFE_PAD);
+/* 时长白话：90s→1m30s、3600s→60m（轴刻度用，越短越要精确到秒） */
+const durCN = s => s<60 ? `${Math.round(s)}s`
+                   : (s%60 ? `${Math.floor(s/60)}m${Math.round(s%60)}s` : `${Math.round(s/60)}m`);
+/* 等时刻度：挑一个 ≥ span/6 的 nice 步长 → 4~6 格，不会挤也不会太空 */
+function lifeTicks(span){
+  const st = NICE_S.find(x => x >= span/6) || NICE_S[NICE_S.length-1];
+  const out=[]; for(let v=st; v<=span; v+=st) out.push(v);
+  if(out.length<2) out.push(span);
+  return out;
+}
+
+function openLife(t){
+  const it = findLife(t);
+  if(!it){
+    lifeTid = null;
+    $('lifeTitle').innerHTML = '订单生命 <span class="d">该单详情暂缺</span>';
+    $('lifeBody').innerHTML = `<div class="card"><div class="empty">
+      看板只保留最近 <b>30 单</b>的完整生命（含全程盈亏轨迹采样），这一单不在其中。<br>
+      完整流水在服务端的 <b>runtime/journal-YYYYMMDD.jsonl</b>（按 <b>ev=open|mark|close</b> 过滤）。</div></div>`;
+    $('lifeView').scrollTop = 0;
+    document.body.classList.add('life-open');
+    return;
+  }
+  lifeTid = it.tid;
+  renderLife(true);
+  $('lifeView').scrollTop = 0;
+  document.body.classList.add('life-open');
+}
+function closeLife(){
+  lifeTid = null;
+  _lifeSig = null;          /* 关掉就作废指纹，下次打开必然重排 */
+  document.body.classList.remove('life-open');
+}
+
+/* 每轮刷新重排（持仓中的单，采样会继续长；平仓单内容不变，重排无副作用）
+   ⚠ **指纹比对不能省**：平仓单是死数据，内容一模一样还去重写 innerHTML，
+   不只是白费，还会让新插入的元素**重播入场动画** → 整屏每 3s 闪一次
+   （这正是用户报的「不要老刷新」）。签名变了才重排。 */
+let _lifeSig = null;
+function renderLife(force){
+  const it = lifeItems.find(x=>x.tid===lifeTid);
+  if(!it) return;
+  const sig = JSON.stringify(it);
+  if(!force && sig === _lifeSig) return;
+  _lifeSig = sig;
+  const L = it.side==='long';
+  const open = it.t_close==null;
+  const live = open ? livePos.find(p=>p.contract===it.sym && p.side===it.side) : null;
+  const pnl = open ? (live?+live.upnl:null) : it.pnl;
+  const now = Date.now()/1000;
+  const hold = it.hold_min != null ? it.hold_min
+             : (open && it.t_open ? (now-it.t_open)/60 : null);
+  const entry = +it.entry || 0;
+  const peakPct = (it.peak!=null && entry) ? ((+it.peak-entry)/entry*100)*(L?1:-1) : null;
+  $('lifeTitle').innerHTML =
+    `${(it.sym||'').replace('_USDT','')} · <span class="${L?'up':'dn'}">${L?'做多':'做空'}</span>`
+    + `<span class="d">${open?'持仓中':'已平仓'} · ${fmtDT(it.t_open)}${open?'':' → '+fmtDT(it.t_close)}</span>`;
+
+  const res = [
+    ['盈亏', pnl==null?'--':`<span class="${cls(pnl)}">${sgn(pnl)} U</span>`, ''],
+    ['持仓时长', holdCN(hold), ''],
+    ['MFE 最大浮盈', `<span class="${it.mfe>0?'up':''}">${pctS(it.mfe)}</span>`, ''],
+    ['MAE 最大浮亏', `<span class="${it.mae<0?'dn':''}">${pctS(it.mae)}</span>`, ''],
+    ['峰值出现在', it.peak_t==null?'--':`开仓后 ${Math.round(it.peak_t)}s`, 's'],
+    ['出场方式', it.cause ? (CAUSE_CN[it.cause]||it.cause) : (open?'—':'--'), 's'],
+  ].map(([k,v,c])=>`<div class="rb"><div class="k">${k}</div><div class="vv ${c}">${v}</div></div>`).join('');
+
+  const o1 = `<div class="kv">
+    ${kv('开仓时间', fmtDT(it.t_open))}
+    ${kv('平仓时间', open?'持仓中':fmtDT(it.t_close))}
+    ${kv('开仓价', fmtP(it.entry))}
+    ${kv('止损价 SL', it.sl==null?'--':fmtP(it.sl))}
+    ${kv('止盈价 TP', it.tp==null?'--':fmtP(it.tp))}
+    ${kv('张数 / 杠杆', `${nz(it.size)} 张 · ${it.lev==null?'--':'×'+it.lev}`)}
+    ${kv('开仓单号', nz(it.order_id), 's')}
+    ${kv('止损单号', nz(it.sl_id), 's')}
+    ${kv('止盈单号', nz(it.tp_id), 's')}
+  </div>`;
+
+  const o2 = `<div class="kv">
+    ${kv('行情定性 regime', nz(REG_CN[it.regime]||it.regime))}
+    ${kv('信号来源 sig', nz(it.sig), 's')}
+    ${kv('入场形态', SRC_CN[it.entry_src]||nz(it.entry_src), 's')}
+    ${kv('模型自报胜率', it.win_rate==null?'--':(Number(it.win_rate)*100).toFixed(0)+'%')}
+    ${kv('1H 动能', it.m1h_mom==null?'--':`${Number(it.m1h_mom)>0?'+':''}${Number(it.m1h_mom).toFixed(2)}%`)}
+    ${kv('布林位置', bandCN(it.band_pos)||'--', 's')}
+    ${kv('ATR', nz(it.atr15))}
+    ${kv('带宽分位', it.bw_pct==null?'--':(Number(it.bw_pct)*100).toFixed(1)+'%')}
+    ${kv('中轨 / 开仓时价', `${fmtP(it.mid)}`)}
+  </div>`;
+
+  /* ---- 持仓盈亏轨迹（纵轴=真实盈亏 U；横轴=真实等时；终点=真实成交盈亏） ---- */
+  const marks = it.marks||[];
+  const num = v => (v==null||v===''||!isFinite(+v)) ? null : +v;
+  /* 横坐标一律用**实际采样时刻 age_s**（不是 offset）：旧单 offset 是固定档位
+     （15/30/60…）、新单是名义秒（15/30/45…），只有 age_s 两个时代都准。 */
+  const pt = marks.map(m=>({a:num(m.a)??num(m.o)??0, u:num(m.u), px:num(m.px)}))
+                  .filter(m=>m.u!=null);
+  /* 终点：已平仓接**真实成交盈亏 pnl**（不是最后一次浮盈采样）；持仓中接当前
+     浮盈，让曲线延伸到此刻（否则末点落后最多一个采样间隔）。 */
+  const endA = it.t_close ? Math.max(0,(+it.t_close)-(+it.t_open||0)) : null;
+  let tail = [];
+  if(endA!=null && pnl!=null) tail = [{a:endA, u:+pnl, exit:true}];
+  else if(open && pnl!=null && pt.length)
+    tail = [{a:Math.max(now-(+it.t_open||now), pt[pt.length-1].a), u:+pnl, live:true}];
+  /* 🔴 起点处理：开仓那一瞬浮盈确实是 0，这个锚点本身是真的；但若首个采样
+     点离开仓很远（重启后才接管的仓 / 老单只有 15~900s 六档），把 0s 锚点
+     连过去会画出**一条纯属虚构的直线**。所以只在「首个采样点距开仓 ≤ 两个
+     采样间隔」时才补锚点，否则让曲线从第一个**真实观测点**起步。 */
+  const iv0 = pt.length>1 ? Math.max(1, pt[1].a - pt[0].a) : 30;
+  const anchored = pt.length && pt[0].a <= iv0*2;
+  const series = (anchored ? [{a:0, u:0, origin:true}] : []).concat(pt).concat(tail);
+  let scMn=0, scMx=0;                 /* 0U 基准必须落在范围内，否则虚线跑出视框 */
+  series.forEach(s=>{ if(s.u<scMn) scMn=s.u; if(s.u>scMx) scMx=s.u; });
+  if(scMx-scMn < 1e-9){ scMx += .2; scMn -= .2; }
+  const pad=(scMx-scMn)*0.14; scMn-=pad; scMx+=pad;
+  const W=1000, H=126;
+  const span = Math.max(1, ...series.map(s=>s.a));
+  const X = a => lifeX(a,span).toFixed(1);
+  const Y = u => (H-10 - (u-scMn)/(scMx-scMn)*(H-24)).toFixed(1);
+  /* 采样点加密后可达 240 个，全画会糊成一片 → 只画起点、采样最高/最低、
+     以及终点（出场/当前）。中间过程由折线本身表达。 */
+  const hi = pt.length ? pt.reduce((a,b)=>b.u>a.u?b:a) : null;
+  const lo = (pt.length>1) ? pt.reduce((a,b)=>b.u<a.u?b:a) : null;
+  const uniq = arr => arr.filter((d,i,a)=>
+    a.findIndex(x=>x.a===d.a && x.u===d.u && !!x.exit===!!d.exit)===i);
+  const dotCol = d => d.u>=0 ? 'var(--red)' : 'var(--green)';
+  const dots = uniq([hi,lo].filter(Boolean).concat(tail)).map(d=>{
+    const col = dotCol(d);
+    return `<circle cx="${X(d.a)}" cy="${Y(d.u)}" r="${d.exit?4.4:(d.live?3.6:3.2)}"
+      fill="${d.live?'var(--panel2)':col}"
+      stroke="${d.exit?'#fff':col}" stroke-width="${d.exit?1.5:(d.live?1.8:1)}"/>`;
+  }).join('')
+    + (anchored ? `<circle cx="${X(0)}" cy="${Y(0)}" r="2.4" fill="var(--dim2)"
+        stroke="var(--panel2)" stroke-width="1"/>` : '');
+  const path = series.map((p,i)=>`${i?'L':'M'}${X(p.a)},${Y(p.u)}`).join('');
+  const y0 = Y(0);
+  const axis = lifeTicks(span).map(s=>
+    `<span style="left:${(lifeX(s,span)/10).toFixed(2)}%">${durCN(s)}</span>`).join('');
+  /* 🔴 采样空档必须**说出来**：老单只有等距 6 档、引擎 10-07 才加密采样，中段与
+     末尾常有大段无观测。不写明的话，用户会把那条**直线连接**误当成真实轨迹 ——
+     这正是原版「曲线漂亮、实际亏钱」的另一种形式。阈值取 max(180s, span/6)，
+     正常密集采样（间隔恒定）不会误报。 */
+  const gapLim = Math.max(180, span/6);
+  const gaps = series.slice(1).map((p,i)=>p.a - series[i].a).filter(d=>d > gapLim);
+  const gapTxt = gaps.length
+    ? ` · <strong style="color:var(--dim2)">${gaps.length} 处采样空档</strong>（最长 ${durCN(Math.max.apply(null,gaps))}，该段是直线连接，<strong>不是</strong>真实轨迹）`
+    : '';
+  const box = series.length>1
+    ? `<div class="lifePath">
+         <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+           <line x1="0" y1="${y0}" x2="${W}" y2="${y0}" stroke="var(--border2)" stroke-width="1" stroke-dasharray="4 4"/>
+           <path d="${path}" fill="none" stroke="var(--blue)" stroke-width="1.5" opacity=".75"/>
+           ${dots}</svg>
+         <div class="lifeAxis">${axis}</div>
+       </div>
+       <div class="sub">虚线 = 0U 基准 · 横轴 = 开仓后真实时间（等时）· 纵轴 = 该时刻真实浮盈 U
+         （区间 ${scMn.toFixed(2)} ~ ${scMx.toFixed(2)} U）· 共 ${marks.length} 个采样点${
+           tail.length ? (tail[0].exit ? '，末点为<strong>真实成交盈亏</strong>' : '，末点为当前浮盈') : ''}${
+           anchored ? '' : `，<strong>前 ${durCN(pt[0].a)} 无采样</strong>（引擎 10-07 才加密采样，老单采不到）`}${gapTxt}</div>`
+    : `<div class="empty">尚无盈亏采样（开仓不足 15s，或服务端还没聚合到）</div>`;
+  /* 采样点可达 240 个 → 小卡只列**关键节点**，不逐档铺（否则页面被撑爆） */
+  const card = (k,v,c,d) => `<div class="m"><div class="k">${k}</div>
+      <div class="vv ${c||''}">${v}</div><div class="d">${d||''}</div></div>`;
+  const mkCards = [card('开仓 0s','0.00U','',fmtP(entry))];
+  if(hi) mkCards.push(card(`采样最高 ${durCN(hi.a)}`, sgn(hi.u)+'U', cls(hi.u), fmtP(hi.px)));
+  if(lo) mkCards.push(card(`采样最低 ${durCN(lo.a)}`, sgn(lo.u)+'U', cls(lo.u), fmtP(lo.px)));
+  if(tail.length && tail[0].exit)
+    mkCards.push(card(`出场 ${durCN(tail[0].a)}`, sgn(tail[0].u)+'U', cls(tail[0].u),
+                      `${CAUSE_CN[it.cause]||it.cause||''} · ${fmtP(it.exit_px)}`));
+  else if(tail.length)
+    mkCards.push(card(`当前 ${durCN(tail[0].a)}`, sgn(tail[0].u)+'U', cls(tail[0].u),
+                      '持仓中 · 每轮刷新更新'));
+  const mkHtml = mkCards.join('');
+
+  const o3 = `<div class="kv">
+    ${kv('出场价', open?'持仓中':fmtP(it.exit_px))}
+    ${kv('盈亏', pnl==null?'--':`<span class="${cls(pnl)}">${sgn(pnl)} U</span>`)}
+    ${kv('峰值价 / 峰值浮盈', `${fmtP(it.peak)}${peakPct==null?'':` · ${pctS(peakPct,2)}`}`)}
+    ${kv('平仓原因 close_cause', it.cause?`${CAUSE_CN[it.cause]||it.cause} <span style="color:var(--dim2)">(${it.cause})</span>`:(open?'持仓中':'--'), 's')}
+    ${kv('出处 text', nz(it.text), 's')}
+  </div>`;
+
+  $('lifeBody').innerHTML =
+    `<div class="resbar">${res}</div>`
+    + `<div class="card" style="margin-top:12px"><h2>开仓 · 下单凭证</h2>${o1}</div>`
+    + `<div class="card" style="margin-top:12px"><h2>开仓时的标签（这一单为什么开）</h2>${o2}`
+    + `<div class="sub" style="margin-top:10px">模型理由</div>`
+    + `<div style="color:#9fb0c4;line-height:1.6;margin-top:2px">${nz(it.reason)||'（老记录无理由）'}</div></div>`
+    + `<div class="card" style="margin-top:12px"><h2>持仓盈亏轨迹</h2>${box}<div class="mk">${mkHtml}</div></div>`
+    + `<div class="card" style="margin-top:12px"><h2>出场</h2>${o3}</div>`;
+}
+
+/* ---- 主刷新 ---- */
+async function loadState(){
+  try{
+    const s = await (await fetch('/api/state')).json();
+    const lv = s.live||{}, h = s.snapshot||{}, now = Date.now()/1000;
+
+    /* 顶栏 */
+    const lim = s.limits||{};
+    $('limTxt').textContent = `高频 ≤${lim.hf??'--'}`;
+    paused = s.paused;
+    $('btnPause').textContent = paused ? '▶ 恢复' : '⏸ 暂停';
+    $('stTxt').textContent = paused ? '已暂停' : '运行中';
+    $('dot').className = 'dot' + (paused?' pause':'');
+    $('modeBadge').textContent = s.mode==='dry' ? '干跑 DRY_RUN' : '实盘 LIVE';
+    $('modeBadge').className = 'badge ' + (s.mode==='dry'?'dry':'live');
+    $('modelBadge').textContent = '模型 ' + (s.model||'--');
+    $('mName').textContent = s.model||'--';
+    $('clock').textContent = new Date().toLocaleTimeString('zh-CN',{hour12:false});
+
+    /* 权益卡 */
+    $('equity').textContent = fmtU(lv.equity);
+    const histEq = (s.hist&&s.hist.equity)||[];
+    const upnl = (lv.positions||[]).reduce((a,x)=>a+(+x.upnl||0),0);
+    put('eqSub', `持仓 ${ (lv.positions||[]).length } 个 · 浮盈 <span class="${cls(upnl)}">${sgn(upnl)} U</span>`);
+    /* 权益折线同理：数据没动就别重画（spark 里要读 clientWidth，故 resize 时作废） */
+    const eqSig = histEq.length ? histEq.length+':'+histEq[histEq.length-1].join(',') : '-';
+    if(eqSig !== _eqSig){ _eqSig = eqSig; spark($('eqSpark'), histEq.slice(-120)); }
+    flash($('equity'));
+
+    /* 今日盈亏：已实现（服务端今日全量 close 求和）+ 浮动 */
+    const t0 = new Date(); t0.setHours(0,0,0,0);
+    const today = s.today_closes || [];
+    const real = (s.today && s.today.real != null) ? +s.today.real
+      : today.reduce((a,t)=>a+(+t.pnl||0),0);
+    const total = real + upnl;
+    const pct = lv.equity ? total/lv.equity*100 : 0;
+    put('pnl', `<span class="${cls(total)}">${sgn(total)} U</span>`);
+    $('pnl').className = 'big num ' + cls(total);
+    put('pnlSub', `已实现 <span class="${cls(real)}">${sgn(real)}</span> · `+
+      `浮动 <span class="${cls(upnl)}">${sgn(upnl)}</span> · ${pct>=0?'+':''}${pct.toFixed(2)}%`);
+    /* 只在「已实现」变了才闪（= 有新平仓）。浮动盈亏每轮都在动，跟着闪会让这张卡
+       一直亮着，「闪」就不再是「发生了什么事」的信号 —— 用户反馈的刷新体感有
+       一半来自这里。 */
+    if(real !== _lastReal){ _lastReal = real; $('pnl')._last = undefined; flash($('pnl')); }
+
+    /* 今日成交（服务端全量统计，10-02 修复截断漏算） */
+    const tCount = (s.today && s.today.count != null) ? s.today.count : today.length;
+    const wins = (s.today && s.today.wins != null) ? s.today.wins
+      : today.filter(t=>+t.pnl>0).length;
+    $('cnt').textContent = tCount + ' 笔';
+    $('cntSub').textContent = tCount ? `平仓 ${tCount} · 胜率 ${Math.round(wins/tCount*100)}%` : '暂无平仓';
+    flash($('cnt'));
+
+    /* 模型卡 */
+    const ago = t => t? Math.max(0,Math.round(now-t)) : null;
+    const hfAgo = ago(h.last_hf_cycle);
+    const iv = (s.intervals||{}).hf||15;
+    $('mInfo').textContent = `决策间隔 ${iv}s · 运行 ${Math.round(now-(+s.snapshot.started_at||now))>=60?Math.round((now-s.snapshot.started_at)/60)+' 分钟':'刚刚启动'} · 异常 hf=${h.hf_errors||0}`;
+    $('mNext').textContent = hfAgo==null ? '下一轮：等待中' :
+      `下一轮决策：约 ${Math.max(0,iv-hfAgo)}s 后（上轮 ${hfAgo}s 前）`;
+
+    /* 品牌格 */
+    const items = (s.scan&&s.scan.items)||[];
+    const pxh = (s.hist&&s.hist.px)||{};
+    const liveTk = lv.tickers||{};
+    const uni = items.length ? items : Object.keys(liveTk).map(k=>({contract:k, px:liveTk[k].px}));
+    const gridHtml = uni.map(m=>{
+      const sym=m.contract, px = m.px ?? (liveTk[sym]||{}).px;
+      const hp = pxh[sym]||[];
+      const pts = hp.length>1 ? hp : (px?[[1,px*0.999],[2,px]]:[]);
+      const rising = pts.length>1 && pts[pts.length-1][1]>=pts[0][1];
+      const dayChg = (()=>{ // 日内涨跌：取 hist 当日首点
+        const t0s = t0.getTime()/1000;
+        const dd = hp.filter(p=>p[0]>=t0s);
+        if(dd.length>1 && px){ const c=(px-dd[0][1])/dd[0][1]*100; return c; }
+        return null;
+      })();
+      return `<div class="tk">
+        <div class="nm"><b>${sym.replace('_USDT','')}</b>USDT永续</div>
+        <div class="px num">${fmtP(px)}<span class="chg num ${dayChg==null?'':cls(dayChg)}">${dayChg==null?'':(dayChg>0?'+':'')+dayChg.toFixed(2)+'%'}</span></div>
+        <svg class="spark" data-spark="${sym}" width="100%" height="30" preserveAspectRatio="none"></svg>
+        <div class="note">${note(m)}</div>
+        ${m.candidate?`<span class="cand">候选 ${m.candidate.side==='long'?'做多':'做空'}${m.candidate.confirm_ready?' · 可确认':''}</span>`:''}
+      </div>`;
+    }).join('');
+    /* 品牌格是**唯一**漏网的裸 innerHTML 写入（10-06 实测：30s 内 11 轮全重排，
+       连带 154 次 spark 重画）。两道闸分开管：
+         ① gridHtml 走 put() —— 价格文本/标注没变就不动 DOM；
+         ② spark 折线是 JS 事后画的，html 里看不出来 → 单独用数据指纹管。
+       另：hp 不足 2 点时原来拿 Date.now() 造点，会让 html 每轮都不同（等于没闸），
+       改成常量点——spark() 只取 min/max 与序号，时间戳本来就没用到。 */
+    const sparkSig = uni.map(m=>{
+      const hp = pxh[m.contract]||[]; const l = hp[hp.length-1];
+      return m.contract+':'+hp.length+':'+(l?l[0]+','+l[1]:'-');
+    }).join(';');
+    const gridChanged = put('tgrid', gridHtml);
+    if(gridChanged || sparkSig !== _sparkSig){
+      _sparkSig = sparkSig;
+      $('tgrid').querySelectorAll('[data-spark]').forEach(el=>{
+        const sym = el.getAttribute('data-spark');
+        spark(el, (pxh[sym]||[]).slice(-80), true);
+      });
+    }
+    put('tgridSec', `品牌格（${uni.length} 品种 · 布林 1h 结构标注 · 更新 ${s.scan&&s.scan.t?fmtT(s.scan.t):'--'}）`, true);
+
+    /* 持仓 */
+    const tkPx = liveTk;
+    putEl('pos:body', $('pos').querySelector('tbody'), (lv.positions||[]).map(x=>{
+      const k = x.contract+'|'+x.side;
+      const cur = (tkPx[x.contract]||{}).px;
+      const tpTxt = x.tp ? fmtP(x.tp) : '--';
+      /* 保证金 = **交易所持仓行的 margin**（后端 _pub_pos 原样透传，别用名义/杠杆自算）；
+         收益率 = 浮盈 ÷ 保证金 = App 里那个百分比（ROE），TP 打到时正好 ≈ 50%。 */
+      const mg = +x.margin||0;
+      const roe = mg>0 ? x.upnl/mg*100 : null;
+      return `<tr><td><b>${x.contract.replace('_USDT','')}</b></td>
+        <td class="${x.side==='long'?'up':'dn'}">${x.side==='long'?'做多':'做空'}</td>
+        <td class="num">${x.size} <span style="color:var(--dim2)">·</span> ${mg>0?fmtU(mg)+'U':'--'}</td><td class="num">${fmtP(x.entry)}</td>
+        <td class="num">${fmtP(cur)}</td>
+        <td class="num" style="color:var(--red)">${x.sl?fmtP(x.sl):'--'}</td>
+        <td class="num" style="color:var(--green)">${tpTxt}</td>
+        <td class="${cls(x.upnl)} num">${sgn(x.upnl)}${roe==null?'':` <span style="color:var(--dim2)">·</span> ${pctS(roe,2)}`}</td>
+        <td><span class="tag t-hf">高频</span>${aiTag()}</td></tr>`;
+    }).join('') || '<tr><td colspan="9" class="empty">空仓 — 等候选 + 模型确认</td></tr>');
+
+    /* 出场监管图例（10-07 改版；阈值仍由后端下发，前端不硬编码任何百分比） */
+    const ec = s.exit_cfg || {};
+    const pc = v => (v*100).toFixed(2)+'%';
+    const erv = s.exit_review || {};
+    if(ec.sl_pct==null && ec.tp_pct==null){
+      put('posLegend', '');                     /* 老后端无此字段 → 不显示图例 */
+    }else{
+      put('posLegend',
+        `<span class="tag t-ai">AI 监管</span> 持仓管理线程每 ${erv.interval_s||60} 秒`
+        + `只拿当前持仓的品种问一次模型：它说平就市价平、说拿就继续拿。`
+        + ` <span style="color:var(--dim2)">交易所固定止损 ${pc(ec.sl_pct||0)} / `
+        + `止盈 ${pc(ec.tp_pct||0)} 始终挂着兜底</span>`);
+    }
+
+    /* 今日交割：服务端已按今日过滤并倒序（最新在上），10 条一页分页 */
+    dealsAll = (s.today_closes || []).slice();
+    const maxPg = Math.max(0, Math.ceil(dealsAll.length/DEALS_PP)-1);
+    if(dealsPage>maxPg) dealsPage = maxPg;
+    /* 订单生命（最近 N 单）：服务端后台线程聚合好的，这里纯内存读、零请求。
+       详情视图若开着 → 每轮重排（持仓中的单，采样会继续往下长）。 */
+    livePos = lv.positions || [];
+    lifeItems = (s.life && s.life.items) || [];
+    const nClick = dealsAll.reduce((a,t)=>a+(findLife(t)?1:0), 0);
+    put('dealsHint', lifeItems.length
+      ? `点下面任意一行 → 看这一单的完整生命（开仓标签 · 15/30/60/120/300/900s 浮盈采样 · 出场结果）`
+        + ` <span style="color:var(--dim2)">· 今日 ${dealsAll.length} 笔中 ${nClick} 笔有详情（服务端只留最近 30 单）</span>`
+      : `订单生命数据尚未就绪（服务端后台首次聚合中）—— 稍后自动出现`);
+    renderDeals();
+    if(lifeTid) renderLife();      /* 指纹没变就什么都不做（见 renderLife） */
+
+    /* 决策日志尾巴（原在 loadLogs 里为它多打了一次 /api/state，这里并进来） */
+    putLog('declog', (s.decisions_tail || '--').trim());
+
+    /* 持仓管理（平仓决策）：只传持仓品种的那一路模型判断 */
+    const exv = s.exit_review || {};
+    put('exitSub', exv.enabled===false
+      ? '已停用 —— 出场只剩交易所那两条固定止损/止盈条件单'
+      : `每 ${exv.interval_s||60} 秒，只拿当前持仓的品种单独问一次模型（不传全池）。` +
+        `它说平 → 市价平掉、并撤掉该方向的止损/止盈条件单；它说拿 → 继续拿着。` +
+        `交易所那两条固定止损/止盈条件单始终保留，作硬兜底。`);
+    putLog('exitlog', (s.exit_tail || '--').trim());
+
+    /* 教训（按标签聚合的结构化渲染，见renderLessons） */
+    renderLessons(s);
+
+    /* 翻仓事务 + 双开审计（10-05） */
+    renderFlip(s);
+
+    /* 复盘迭代引擎（第五线程） */
+    renderReview(s);
+
+    /* ---- 轮询节奏（用户反馈「不要老刷新」）----
+       固定 3s 无脑重绘，安静期也在刷。改成：真在变 → 3s；否则 10s；
+       标签页不可见 → 一次都不请求（回来时立刻补一次）。
+       叠加 put() 的写前比对，绝大多数轮次 DOM 一个字节都不动。 */
+    const fz = (s.flip && s.flip.states) || {};
+    const busy = (lv.positions||[]).length > 0
+      || Object.keys((s.flip && s.flip.txn) || {}).length > 0
+      || Object.values(fz).some(r => ['S2','S3','S4','S5'].includes(r && r.state));
+    pollMs = busy ? 3000 : 10000;
+  }catch(e){
+    $('stTxt').textContent = '连接失败';
+    $('dot').className = 'dot off';
+    pollMs = 10000;              /* 连不上就退到慢档，别死磕 */
+  }
+}
+
+/* ---- 日志框：写前比对 + 「用户本来就贴着底部」才跟着滚 ----
+   老做法每 6s 无脑 textContent= + scrollTop=scrollHeight → 正在往上翻日志的人
+   每 6s 被拽回底部。 */
+function putLog(id, txt){
+  const el = $(id);
+  if(!el) return;
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+  if(putEl(id, el, txt, true) && atBottom) el.scrollTop = el.scrollHeight;
+}
+
+/* ---- 模型教训：解析 lessons.md 的 [聚合] 行并结构化渲染 ----
+   行格式（agents/review.py::_upsert_agg 产出，唯一真源）：
+   [聚合] <标签组合> | <战绩> | <时间> <sym> <side> <pnl>U → <教训正文>
+   其中 <战绩> 形如「出现 3 次 | 胜率 33%（1/3）| 累计 -0.150U」或「本类首笔」。
+   ⚠ server.py 只回传 lessons.md 尾部 10 行，且**不含**文件头说明行
+   （readlines()[-10:] 之后再strip，头说明只在文件仅 1 行时才会出现），
+   所以这里也要能识别并跳过那一行。 */
+const LESSON_THIN_N = 5;   /* n<5 视为样本不足（与后端 thin 同口径） */
+function parseLesson(line){
+  if(!line || line.indexOf('[聚合]') !== 0) return null;
+  /* 拆成段：标签组合 / 战绩 / 尾段。教训正文里也可能有 "| "，
+     所以只在**前两段**上切，剩余部分按最后一个 "→" 分出正文。 */
+  const seg = line.split('|');
+  if(seg.length < 2) return null;
+  const combo = seg[0].replace('[聚合]','').trim();
+  /* 战绩可能在第 2 段，也可能因为 "| 累计" 断到第 3、4 段：
+     逐段吞掉所有"出现/胜率/累计"形态的段为止。 */
+  let i = 1, n = null, wr = null, cum = null;
+  while(i < seg.length){
+    const s = seg[i].trim();
+    let m;
+    if((m = s.match(/^出现\s*(\d+)\s*次/))){ n = +m[1]; i++; continue; }
+    if((m = s.match(/^胜率\s*([\d.]+)%.*?（(\d+)\/(\d+)）/))){ wr = +m[1]; i++; continue; }
+    if((m = s.match(/^累计\s*([+-][\d.]+)U/))){ cum = +m[1]; i++; continue; }
+    break;
+  }
+  const rest = seg.slice(i).join('|').trim();
+  const arrow = rest.lastIndexOf('→');
+  const body = (arrow >= 0 ? rest.slice(arrow+1) : rest).trim();
+  return {combo, n, wr, cum, body};
+}
+function renderLessons(s){
+  const raw = (s.lessons||[]).filter(x => x && x.indexOf('（只记录亏损单') !== 0);
+  const items = raw.map(parseLesson).filter(Boolean);
+  const el = $('lessons');
+  if(!items.length){
+    /* 空态要说清"为什么空"——只写"暂无"会让人以为功能坏了 */
+    const closes = (s.today_closes||[]).length;
+    putEl('lessons', el, '<div class="empty">暂无符合条件的亏损教训'
+      + (closes ? `（今日平仓 ${closes} 笔，盈利单不产生教训）`
+                : '（平仓后自动生成）') + '</div>');
+    put('lessonSub', '只记录亏损单的条件教训；盈利单不进教训（其盈亏统计见「标签战绩」，盈亏单都算）', true);
+    return;
+  }
+  putEl('lessons', el, items.map(r=>{
+    const thin = (r.n!==null && r.n<LESSON_THIN_N);
+    const wrTxt = (r.wr===null) ? '' :
+      `<span class="m">胜率 <b class="${r.wr>=50?'up':'dn'}">${r.wr.toFixed(0)}%</b></span>`;
+    const nTxt = (r.n===null) ? '<span class="m">本类首笔</span>'
+      : `<span class="m">${r.n} 次${thin?' <b style="color:var(--amber)">· 样本不足</b>':''}</span>`;
+    const cumTxt = (r.cum===null) ? '' :
+      `<span class="m">累计 <b class="${r.cum>=0?'up':'dn'}">${sgn(r.cum)}U</b></span>`;
+    return `<span class="lsn${thin?' thin':''}">
+      <span class="hd"><span class="combo">${r.combo}</span>${nTxt}${wrTxt}${cumTxt}</span>
+      <span class="body">${r.body}</span></span>`;
+  }).join(''));
+  put('lessonSub', `共 ${items.length} 类亏损教训`
+    + ' · 按开仓时的动能/位置/行情聚合；胜率与累计盈亏取自该类真实平仓记录', true);
+}
+
+/* ---- 标签战绩（按开仓时状态分组的真实胜率） ---- */
+function renderReview(s){
+  const rv = s.review||{}, dims = rv.dims||{};
+  /* 胜率列：>=50% 红(up) / <50% 绿(dn) —— 沿用持仓盈亏那套配色语义
+     （加密里红涨绿跌，这里红=赢面大）。win_rate 是小数，×100 格式化。*/
+  const wrCell = r => r.win_rate>=0.5
+    ? `<b class="up">${(r.win_rate*100).toFixed(1)}%</b>`
+    : `<b class="dn">${(r.win_rate*100).toFixed(1)}%</b>`;
+  const rowsOf = key => (dims[key]||[]).map(r=>
+    `<tr class="${r.thin?'thin':''}">
+       <td>${r.label}${r.thin?' <span class="tag t-watch">样本不足</span>':''}</td>
+       <td class="num">${r.n}</td>
+       <td class="num">${wrCell(r)}</td>
+       <td class="num ${r.avg_pnl>=0?'up':'dn'}">${sgn(r.avg_pnl)}</td>
+       <td class="num ${r.cum>=0?'up':'dn'}">${sgn(r.cum)}</td>
+     </tr>`).join('');
+  const EMPTY = '<tr><td colspan="5" class="empty">暂无带完整字段的平仓记录，标签统计需累积样本</td></tr>';
+  /* 4 个维度（10-05 补 entry_src：后端一直在算、前端一直没读） */
+  [['tagMom','mom_dir'],['tagPos','pos_zone'],['tagReg','regime'],['tagSrc','entry_src']]
+    .forEach(([id,key])=>{
+      const el = $(id); if(!el) return;
+      putEl(id + ':body', el.querySelector('tbody'), rowsOf(key) || EMPTY);
+    });
+  /* 顶部说明：10-05 重写。原文案只写「可配对 28 笔」而没有分母和时间窗口，
+     放在「今日做单」页里会被**误读成今天的战绩**（实测该 28 笔跨 10-03~10-05，
+     不是今天）。三件事必须写清：时间窗口 / 样本覆盖率 / 胜率的分母口径。
+
+     🔴 `total_closed` 是**后端可选字段**（server.py 新增，重启引擎后才出现）。
+        缺失时 `rv.total_closed|0` → 0，若照常拼文案会渲染出
+        「共 **0** 笔平仓记录，其中 **28** 笔带完整开仓标签（**0%**）」——
+        自相矛盾且**比改动前更误导**。所以 `total<=0` 时走独立的降级文案，
+        全文不出现任何「共 0 笔」「0%」「不代表全部 0 笔」。*/
+  const total = rv.total_closed|0;          // 平仓总数（server.py 从全量 trades 算）
+  const hasTot = total > 0;                 // 分母是否可用
+  const cover = hasTot ? (rv.n/total*100).toFixed(1) : '0';
+  // 降级分支的第二行：分母不可用时**不能**引用 ${total}
+  const whyLine = hasTot
+    ? `覆盖率低的原因：10-05 之前的老记录没有 `
+      + `<span style="font-family:var(--mono)">t_at_open / trade_id</span>，`
+      + `配不上开仓行，也就没有 m1h_mom / band_pos / regime / entry_src 四个标签。`
+      + `下面的胜率是<b>这 ${rv.n} 笔已标注样本</b>的实际胜率，`
+      + `<b>不代表全部 ${total} 笔</b>，样本量偏小的格子已灰显。`
+    : `下面各表的胜率是<b>这 ${rv.n} 笔已标注样本</b>的实际胜率，`
+      + `样本量偏小的格子已灰显。`;
+  put('tagSub', rv.n
+    ? (hasTot
+        ? `共<b>${total}</b> 笔平仓记录，其中 <b>${rv.n}</b> 笔带完整开仓标签`
+          + `（<b>${cover}%</b>）· <b>跨 10-02 至今的全部历史</b>，非今日`
+        : `已标注样本 <b>${rv.n}</b> 笔（<b>跨 10-02 至今的全部历史</b>，非今日）`
+          + `· 覆盖率统计需引擎重启后可用`)
+      + `<br><span style="color:var(--dim)">${whyLine}</span>`
+    : `暂无带完整字段的平仓记录，标签统计需累积样本`);
+  /* 四维组合：10-05 从一行文字改成表格（列：组合 / 笔数 / 胜率 / 笔均 / 累计） */
+  const g = rv.groups||[];
+  putEl('tagGroupTbl:body', $('tagGroupTbl').querySelector('tbody'), g.length
+    ? g.map(r=>{
+        const wr = `<b class="${r.win_rate>=0.5?'up':'dn'}">${(r.win_rate*100).toFixed(1)}%</b>`;
+        return `<tr class="${r.thin?'thin':''}">
+          <td>${r.label}</td>
+          <td class="num">${r.n}</td>
+          <td class="num">${wr}</td>
+          <td class="num ${r.avg_pnl>=0?'up':'dn'}">${sgn(r.avg_pnl)}</td>
+          <td class="num ${r.cum>=0?'up':'dn'}">${sgn(r.cum)}</td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="5" class="empty">暂无 n≥3 的四维组合（组合数比单维更碎，'
+      + '需更多样本才会出现）</td></tr>');
+}
+
+/* ---- 翻仓事务 + 双开审计（10-05）----
+   数据源：/api/state 的 flip 段（engine._watch 每2s 从core/flip.snapshot() 取，
+   server.py 原样透传）。零阻塞 IO：这里只做内存里的对象读 + 字符串拼。
+   状态口径：S0 无仓 / S1 单仓 / S2 遗留双开 / S3 翻仓中 / S4 回滚中 /
+             S5 回滚失败（只报警，停止一切自动动作）。*/
+const FLIP_STATE_HELP = 'S0 无仓 · S1 单仓（稳态）· S2 遗留双开（异常，只告警不自动收敛）· S3 翻仓中 · S4 回滚中 · S5 回滚失败（停止一切自动动作，等人工）';
+function renderFlip(s){
+  const fp = s.flip || (s.live && s.live.flip) || {};
+  const states = fp.states || {}, txn = fp.txn || {}, frozen = fp.frozen || {};
+  const audit = fp.dual_audit || [];
+  const chips = Object.keys(states).sort().map(c=>{
+    const r = states[c] || {}, st = r.state || 'S0';
+    const legs = r.legs || {};
+    const legTxt = ['long','short'].filter(k=>+legs[k]>0)
+      .map(k=>`${k==='long'?'多':'空'}${legs[k]}`).join('+') || '无仓';
+    const t = txn[c];
+    let extra = '';
+    if(t){
+      extra = ` · 阶段 ${t.phase} · 剩 ${Math.round(t.left_s)}s`;
+      if(t.retry_used) extra += ` · 重试 ${t.retry_used}`;
+      if(t.suppressed) extra += ` · 冻结拦下 ${t.suppressed}`;
+    }else if(r.frozen){
+      extra = ` · 冻结剩 ${Math.round(r.freeze_left_s||0)}s`;
+    }
+    const bar = (st==='S3'||st==='S4')
+      ? `<span class="fbar" style="width:${Math.max(4,Math.min(100,(t&&t.left_s!=null)?(t.left_s/(fp.timeout_s||30))*100:0))}%"></span>` : '';
+    return `<span class="fchip ${st}" title="${st} ${r.label||''}｜腿：${legTxt}">${st} ${st==='S0'?'':c.replace('_USDT','')}${extra?`<b>${extra}</b>`:''}${bar}</span>`;
+  });
+  put('flipStates', chips.join('')
+    || '<span class="fchip S0">暂无账内持仓（S0）</span>');
+  const nS2 = Object.values(states).filter(r=>r.state==='S2').length;
+  const nS35 = Object.values(states).filter(r=>r.state==='S3'||r.state==='S4'||r.state==='S5').length;
+  put('flipSub', FLIP_STATE_HELP
+    + `<br>本轮：${Object.keys(states).length} 个账内品种 · 遗留双开 ${nS2} · 事务进行中/失败 ${nS35}`
+    + (Object.keys(frozen).length ? ` · 冻结中 ${Object.keys(frozen).map(k=>`${k.replace('_USDT','')}剩${Math.round(frozen[k])}s`).join(' ')}` : ''));
+  const rows = audit.slice(-12).reverse().map(r=>{
+    const legs = r.legs||{};
+    const legTxt = ['long','short'].filter(k=>+legs[k]>0)
+      .map(k=>`${k==='long'?'多':'空'}${legs[k]}张`).join(' + ');
+    return `<div class="arow"><span class="atm">${r.ts||''}</span>
+      <b>${(r.contract||'').replace('_USDT','')}</b>
+      <span>${legTxt}</span>
+      <span class="awhy">${r.note||''}</span></div>`;
+  });
+  put('flipAudit', rows.length
+    ? `<div style="margin-top:6px;color:var(--red)">双开审计（${audit.length} 条 · 只告警，代码不会自动平仓，请手动清理多余腿）</div>` + rows.join('')
+    : '<div style="margin-top:6px">双开审计：无记录</div>');
+}
+
+async function loadLogs(){
+  try{
+    const lg = await (await fetch('/api/log?n=80')).json();
+    putLog('englog', lg.join('\n')||'--');
+  }catch(e){}
+}
+
+async function togglePause(){
+  const r = await fetch(paused?'/resume':'/pause',{method:'POST'});
+  paused = (await r.json()).paused;
+  $('btnPause').textContent = paused ? '▶ 恢复' : '⏸ 暂停';
+}
+
+/* ---- 轮询调度（自适应 + 不可见即停）----
+   用户反馈「前端不要老刷新，体验不好」。固定 3s 恒定重绘的毛病：
+   安静期也在刷、读日志时被拽回底部、数字一直在跳。
+   现在的口径：真在变（有持仓 / 有翻仓事务 / 翻仓异常态）→ 3s；
+   否则 10s；**标签页不可见一次都不请求**（切回来立刻补一次）。
+   pollMs 由 loadState 每轮按 payload 实况改写。 */
+let pollMs = 3000, pollTimer = null;
+function schedulePoll(){
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(async ()=>{
+    if(!document.hidden) await loadState();
+    schedulePoll();
+  }, pollMs);
+}
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden) return;
+  clearTimeout(pollTimer);
+  loadState().then(schedulePoll);      /* 回到前台立刻补一次，然后接着轮询 */
+});
+
+loadState(); loadLogs();
+/* 今日交割分页按钮 */
+$('dealPrev').onclick = ()=>{ if(dealsPage>0){ dealsPage--; renderDeals(); } };
+$('dealNext').onclick = ()=>{ const mp=Math.max(0,Math.ceil(dealsAll.length/DEALS_PP)-1); if(dealsPage<mp){ dealsPage++; renderDeals(); } };
+/* 历史行 → 订单生命详情。**事件委托**：tbody 每轮都被 innerHTML 重建，
+   把 handler 绑在行上会随重建丢掉；绑在不变的 <table> 上则一劳永逸。 */
+$('deals').addEventListener('click', ev=>{
+  const tr = ev.target.closest('tr[data-i]');
+  if(!tr || !tr.classList.contains('rowlink')) return;
+  const t = dealsAll[+tr.getAttribute('data-i')];
+  if(t) openLife(t);
+});
+/* Esc 关详情（桌面顺手；手机端点「返回历史」按钮） */
+document.addEventListener('keydown', ev=>{
+  if(ev.key === 'Escape' && document.body.classList.contains('life-open')) closeLife();
+});
+
+schedulePoll();
+setInterval(()=>{ if(!document.hidden) loadLogs(); }, 6000);
+</script>
+</body>
+</html>

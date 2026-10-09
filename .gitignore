@@ -1,0 +1,29 @@
+# ---- 密钥与本地配置（绝不入库）----
+.env
+.env.*
+!.env.example
+
+# ---- 运行时产物 ----
+runtime/
+logs/
+*.log
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

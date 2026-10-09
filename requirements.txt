@@ -1,0 +1,6 @@
+fastapi>=0.65
+uvicorn>=0.15
+pyyaml>=5.4
+# watchdog.py 的引擎进程判活依赖 psutil（按 cmdline 匹配进程）。
+# 缺失时它会静默返回空列表 → 恒判「引擎进程不存在」→ 无限重启引擎。
+psutil>=5.9
